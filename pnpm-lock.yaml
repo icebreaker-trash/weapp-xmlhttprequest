@@ -21,6 +21,7 @@ specifiers:
   jest: ^29.5.0
   lodash: ^4.17.21
   lodash-es: ^4.17.21
+  miniprogram-api-typings: ^3.9.0
   only-allow: ^1.1.1
   prettier: ^2.8.6
   rollup: ^3.20.0
@@ -54,6 +55,7 @@ devDependencies:
   jest: 29.5.0_757mb262zsxkcnuknwfdsckmku
   lodash: 4.17.21
   lodash-es: 4.17.21
+  miniprogram-api-typings: 3.9.0
   only-allow: 1.1.1
   prettier: 2.8.6
   rollup: 3.20.0
@@ -3478,6 +3480,10 @@ packages:
 
   /minimist/1.2.8:
     resolution: {integrity: sha512-2yyAR8qBkN3YuheJanUpWC5U3bb5osDywNB8RzDVlDwDHbocAJveqqj1u8+SVD7jkWT4yvsHCpWqqWqAxb0zCA==}
+    dev: true
+
+  /miniprogram-api-typings/3.9.0:
+    resolution: {integrity: sha512-QCXHHW9H4XYazb8J9EMiFyaOWHXhBG4oehkQqi+76FJpKKIlpgL0ZkXxzJ2L+6T/c5OxKm7iegovKIQGVkZDLQ==}
     dev: true
 
   /ms/2.0.0:
