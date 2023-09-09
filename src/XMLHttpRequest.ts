@@ -1,8 +1,12 @@
-/// <reference path="../node_modules/miniprogram-api-typings/index.d.ts" />
-import { Events } from './event-emitter'
-import { parseUrl } from './bom/URL'
-
-import { isFunction, isString } from './util'
+import {
+  createEvent,
+  Events,
+  parseUrl,
+  TaroEvent,
+  window
+} from '@tarojs/runtime'
+import { isFunction, isString } from '@tarojs/shared'
+import { request } from '@tarojs/taro'
 
 declare const ENABLE_COOKIE: boolean
 
@@ -62,6 +66,46 @@ const STATUS_TEXT_MAP = {
   504: 'Gateway Timeout',
   505: 'HTTP Version Not Supported'
 }
+
+export interface XMLHttpRequestEvent extends TaroEvent {
+  target: XMLHttpRequest
+  currentTarget: XMLHttpRequest
+  loaded: number
+  total: number
+}
+
+function createXMLHttpRequestEvent(
+  event: string,
+  target: XMLHttpRequest,
+  loaded: number
+): XMLHttpRequestEvent {
+  const e = createEvent(event) as XMLHttpRequestEvent
+  try {
+    Object.defineProperties(e, {
+      currentTarget: {
+        enumerable: true,
+        value: target
+      },
+      target: {
+        enumerable: true,
+        value: target
+      },
+      loaded: {
+        enumerable: true,
+        value: loaded || 0
+      },
+      // 读 Content-Range 字段，目前来说作用不大,先和 loaded 保持一致
+      total: {
+        enumerable: true,
+        value: loaded || 0
+      }
+    })
+  } catch (err) {
+    // no handler
+  }
+  return e
+}
+
 // https://developer.mozilla.org/zh-CN/docs/Web/API/XMLHttpRequest
 export class XMLHttpRequest extends Events {
   static readonly UNSENT = 0
@@ -91,30 +135,33 @@ export class XMLHttpRequest extends Events {
   #response: null
   #timeout: number
   #withCredentials: boolean
-  #requestTask: null | WechatMiniprogram.RequestTask
+  #requestTask: null | Taro.RequestTask<any>
 
-  // 事件
+  // 事件正常流转： loadstart => progress（可能多次） => load => loadend
+  // error 流转： loadstart => error => loadend
+  // abort 流转： loadstart => abort => loadend
+  // web在线测试： https://developer.mozilla.org/zh-CN/play
 
   /** 当 request 被停止时触发，例如当程序调用 XMLHttpRequest.abort() 时 */
-  onabort: (() => void) | null = null
+  onabort: ((e: XMLHttpRequestEvent) => void) | null = null
 
   /** 当 request 遭遇错误时触发 */
-  onerror: ((err: any) => void) | null = null
+  onerror: ((e: XMLHttpRequestEvent) => void) | null = null
 
   /** 接收到响应数据时触发 */
-  onloadstart: (() => void) | null = null
+  onloadstart: ((e: XMLHttpRequestEvent) => void) | null = null
 
   /** 请求成功完成时触发 */
-  onload: (() => void) | null = null
+  onload: ((e: XMLHttpRequestEvent) => void) | null = null
 
   /** 当请求结束时触发，无论请求成功 ( load) 还是失败 (abort 或 error)。 */
-  onloadend: (() => void) | null = null
+  onloadend: ((e: XMLHttpRequestEvent) => void) | null = null
 
   /** 在预设时间内没有接收到响应时触发 */
-  ontimeout: (() => void) | null = null
+  ontimeout: ((e: XMLHttpRequestEvent) => void) | null = null
 
   /** 当 readyState 属性发生变化时，调用的事件处理器 */
-  onreadystatechange: (() => void) | null = null
+  onreadystatechange: ((e: XMLHttpRequestEvent) => void) | null = null
 
   constructor() {
     super()
@@ -156,8 +203,14 @@ export class XMLHttpRequest extends Events {
     this.#readyState = readyState
 
     if (hasChange) {
-      this.trigger('readystatechange')
-      isFunction(this.onreadystatechange) && this.onreadystatechange()
+      const readystatechangeEvent = createXMLHttpRequestEvent(
+        'readystatechange',
+        this,
+        0
+      )
+      this.trigger('readystatechange', readystatechangeEvent)
+      isFunction(this.onreadystatechange) &&
+        this.onreadystatechange(readystatechangeEvent)
     }
   }
 
@@ -178,8 +231,9 @@ export class XMLHttpRequest extends Events {
           // 超时
           if (this.#requestTask) this.#requestTask.abort()
           this.#callReadyStateChange(XMLHttpRequest.DONE)
-          this.trigger('timeout')
-          isFunction(this.ontimeout) && this.ontimeout()
+          const timeoutEvent = createXMLHttpRequestEvent('timeout', this, 0)
+          this.trigger('timeout', timeoutEvent)
+          isFunction(this.ontimeout) && this.ontimeout(timeoutEvent)
         }
       }, this.#timeout)
     }
@@ -197,22 +251,20 @@ export class XMLHttpRequest extends Events {
 
     // 头信息
     const header = Object.assign({}, this.#header)
-    header.cookie = window.document.cookie
+    // https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Cookies
+    header.cookie = window.document.$$cookie
     if (!this.withCredentials) {
       // 不同源，要求 withCredentials 为 true 才携带 cookie
       const { origin } = parseUrl(url)
       if (origin !== window.location.origin) delete header.cookie
     }
-    this.#requestTask = wx.request({
+    this.#requestTask = request({
       url,
       data: this.#data || {},
       header,
       // @ts-ignore
       method: this.#method,
-      // @changed
-      // https://developers.weixin.qq.com/miniprogram/dev/api/network/request/wx.request.html
-      // 其他，这个中文option是认真的吗？
-      dataType: this.#responseType === 'json' ? 'json' : '其他',
+      dataType: this.#responseType === 'json' ? 'json' : 'text',
       responseType:
         this.#responseType === 'arraybuffer' ? 'arraybuffer' : 'text',
       success: this.#requestSuccess.bind(this),
@@ -276,11 +328,22 @@ export class XMLHttpRequest extends Events {
     // 处理返回数据
     if (data) {
       this.#callReadyStateChange(XMLHttpRequest.LOADING)
-      this.trigger('loadstart')
-      isFunction(this.onloadstart) && this.onloadstart()
+      const loadstartEvent = createXMLHttpRequestEvent(
+        'loadstart',
+        this,
+        header['Content-Length']
+      )
+      this.trigger('loadstart', loadstartEvent)
+      isFunction(this.onloadstart) && this.onloadstart(loadstartEvent)
       this.#response = data
-      this.trigger('load')
-      isFunction(this.onload) && this.onload()
+
+      const loadEvent = createXMLHttpRequestEvent(
+        'load',
+        this,
+        header['Content-Length']
+      )
+      this.trigger('load', loadEvent)
+      isFunction(this.onload) && this.onload(loadEvent)
     }
   }
 
@@ -288,10 +351,33 @@ export class XMLHttpRequest extends Events {
    * 请求失败
    */
   #requestFail(err) {
+    // 微信小程序，无论接口返回200还是其他，响应无论是否有错误，都会进入 success 回调；只有类似超时这种请求错误才会进入 fail 回调
+    //
+    /**
+     * 阿里系小程序，接口返回非200状态码，会进入 fail 回调, 此时 err 对象结构如下（当错误码为 14 或 19 时，会多返回 status、data、headers。可通过这些字段获取服务端相关错误信息）：
+     {
+       data: "{\"code\": 401,\"msg\":\"登录过期，请重新登录\"}"
+       error: 19
+       errorMessage: "http status error"
+       headers: {date: 'Mon, 14 Aug 2023 08:54:58 GMT', content-type: 'application/json;charset=UTF-8', content-length: '52', connection: 'close', access-control-allow-credentials: 'true', …}
+       originalData: "{\"code\": 401,\"msg\":\"登录过期，请重新登录\"}"
+       status: 401
+     }
+     */
+    // 统一行为，能正常响应的，都算 success.
+    if (err.status) {
+      this.#requestSuccess({
+        data: err,
+        statusCode: err.status,
+        header: err.headers
+      })
+      return
+    }
     this.#status = 0
-    this.#statusText = err.errMsg
-    this.trigger('error')
-    isFunction(this.onerror) && this.onerror(err)
+    this.#statusText = err.errMsg || err.errorMessage
+    const errorEvent = createXMLHttpRequestEvent('error', this, 0)
+    this.trigger('error', errorEvent)
+    isFunction(this.onerror) && this.onerror(errorEvent)
   }
 
   /**
@@ -302,8 +388,13 @@ export class XMLHttpRequest extends Events {
     this.#callReadyStateChange(XMLHttpRequest.DONE)
 
     if (this.#status) {
-      this.trigger('loadend')
-      isFunction(this.onloadend) && this.onloadend()
+      const loadendEvent = createXMLHttpRequestEvent(
+        'loadend',
+        this,
+        this.#header['Content-Length']
+      )
+      this.trigger('loadend', loadendEvent)
+      isFunction(this.onloadend) && this.onloadend(loadendEvent)
     }
   }
 
@@ -372,8 +463,9 @@ export class XMLHttpRequest extends Events {
   abort() {
     if (this.#requestTask) {
       this.#requestTask.abort()
-      this.trigger('abort')
-      isFunction(this.onabort) && this.onabort()
+      const abortEvent = createXMLHttpRequestEvent('abort', this, 0)
+      this.trigger('abort', abortEvent)
+      isFunction(this.onabort) && this.onabort(abortEvent)
     }
   }
 

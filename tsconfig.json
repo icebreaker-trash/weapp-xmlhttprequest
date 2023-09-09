@@ -2,6 +2,9 @@
   "extends": "@tsconfig/recommended/tsconfig.json",
   "compilerOptions": {
     "outDir": "dist",
+    "lib": [
+      "ES2015"
+    ],
     "rootDirs": [
       "src",
       "test"
