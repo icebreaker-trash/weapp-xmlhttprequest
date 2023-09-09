@@ -1,26 +1,11 @@
-import {
-  createEvent,
-  Events,
-  parseUrl,
-  TaroEvent,
-  window
-} from '@tarojs/runtime'
+import { createEvent, Events, parseUrl, TaroEvent, window } from '@tarojs/runtime'
 import { isFunction, isString } from '@tarojs/shared'
 import { request } from '@tarojs/taro'
 
 declare const ENABLE_COOKIE: boolean
 
-const SUPPORT_METHOD = [
-  'OPTIONS',
-  'GET',
-  'HEAD',
-  'POST',
-  'PUT',
-  'DELETE',
-  'TRACE',
-  'CONNECT'
-]
-const STATUS_TEXT_MAP = {
+const SUPPORT_METHOD = ['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE', 'CONNECT']
+const STATUS_TEXT_MAP: Record<string, string> = {
   100: 'Continue',
   101: 'Switching protocols',
 
@@ -64,7 +49,7 @@ const STATUS_TEXT_MAP = {
   502: 'Bad Gateway',
   503: 'Service Unavailable',
   504: 'Gateway Timeout',
-  505: 'HTTP Version Not Supported'
+  505: 'HTTP Version Not Supported',
 }
 
 export interface XMLHttpRequestEvent extends TaroEvent {
@@ -74,28 +59,24 @@ export interface XMLHttpRequestEvent extends TaroEvent {
   total: number
 }
 
-function createXMLHttpRequestEvent(
-  event: string,
-  target: XMLHttpRequest,
-  loaded: number
-): XMLHttpRequestEvent {
+function createXMLHttpRequestEvent(event: string, target: XMLHttpRequest, loaded: number): XMLHttpRequestEvent {
   const e = createEvent(event) as XMLHttpRequestEvent
   try {
     Object.defineProperties(e, {
-      currentTarget: {
+      'currentTarget': {
         enumerable: true,
         value: target
       },
-      target: {
+      'target': {
         enumerable: true,
         value: target
       },
-      loaded: {
+      'loaded': {
         enumerable: true,
         value: loaded || 0
       },
       // 读 Content-Range 字段，目前来说作用不大,先和 loaded 保持一致
-      total: {
+      'total': {
         enumerable: true,
         value: loaded || 0
       }
@@ -173,7 +154,7 @@ export class XMLHttpRequest extends Events {
     this.#statusText = ''
     this.#readyState = XMLHttpRequest.UNSENT
     this.#header = {
-      Accept: '*/*'
+      Accept: '*/*',
     }
     this.#responseType = ''
     this.#resHeader = null
@@ -198,19 +179,14 @@ export class XMLHttpRequest extends Events {
   /**
    * readyState 变化
    */
-  #callReadyStateChange(readyState) {
+  #callReadyStateChange(readyState: any) {
     const hasChange = readyState !== this.#readyState
     this.#readyState = readyState
 
     if (hasChange) {
-      const readystatechangeEvent = createXMLHttpRequestEvent(
-        'readystatechange',
-        this,
-        0
-      )
+      const readystatechangeEvent = createXMLHttpRequestEvent('readystatechange', this, 0)
       this.trigger('readystatechange', readystatechangeEvent)
-      isFunction(this.onreadystatechange) &&
-        this.onreadystatechange(readystatechangeEvent)
+      isFunction(this.onreadystatechange) && this.onreadystatechange(readystatechangeEvent)
     }
   }
 
@@ -219,9 +195,7 @@ export class XMLHttpRequest extends Events {
    */
   #callRequest() {
     if (!window || !window.document) {
-      console.warn(
-        'this page has been unloaded, so this request will be canceled.'
-      )
+      console.warn('this page has been unloaded, so this request will be canceled.')
       return
     }
 
@@ -265,22 +239,19 @@ export class XMLHttpRequest extends Events {
       // @ts-ignore
       method: this.#method,
       dataType: this.#responseType === 'json' ? 'json' : 'text',
-      responseType:
-        this.#responseType === 'arraybuffer' ? 'arraybuffer' : 'text',
+      responseType: this.#responseType === 'arraybuffer' ? 'arraybuffer' : 'text',
       success: this.#requestSuccess.bind(this),
       fail: this.#requestFail.bind(this),
-      complete: this.#requestComplete.bind(this)
+      complete: this.#requestComplete.bind(this),
     })
   }
 
   /**
    * 请求成功
    */
-  #requestSuccess({ data, statusCode, header }) {
+  #requestSuccess({ data, statusCode, header }: any) {
     if (!window || !window.document) {
-      console.warn(
-        'this page has been unloaded, so this request will be canceled.'
-      )
+      console.warn('this page has been unloaded, so this request will be canceled.')
       return
     }
 
@@ -303,10 +274,8 @@ export class XMLHttpRequest extends Events {
           const lastSplitStr = setCookieStr.substring(start, nextSplit)
           const splitStr = setCookieStr.substr(nextSplit)
 
-          if (
-            // eslint-disable-next-line no-control-regex
-            /^,\s*([^,=;\x00-\x1F]+)=([^;\n\r\0\x00-\x1F]*).*/.test(splitStr)
-          ) {
+          // eslint-disable-next-line no-control-regex
+          if (/^,\s*([^,=;\x00-\x1F]+)=([^;\n\r\0\x00-\x1F]*).*/.test(splitStr)) {
             // 分割成功，则上一片是完整 cookie
             cookies.push(lastSplitStr)
             start = nextSplit + 1
@@ -328,20 +297,12 @@ export class XMLHttpRequest extends Events {
     // 处理返回数据
     if (data) {
       this.#callReadyStateChange(XMLHttpRequest.LOADING)
-      const loadstartEvent = createXMLHttpRequestEvent(
-        'loadstart',
-        this,
-        header['Content-Length']
-      )
+      const loadstartEvent = createXMLHttpRequestEvent('loadstart', this, header['Content-Length'])
       this.trigger('loadstart', loadstartEvent)
       isFunction(this.onloadstart) && this.onloadstart(loadstartEvent)
       this.#response = data
 
-      const loadEvent = createXMLHttpRequestEvent(
-        'load',
-        this,
-        header['Content-Length']
-      )
+      const loadEvent = createXMLHttpRequestEvent('load', this, header['Content-Length'])
       this.trigger('load', loadEvent)
       isFunction(this.onload) && this.onload(loadEvent)
     }
@@ -350,9 +311,9 @@ export class XMLHttpRequest extends Events {
   /**
    * 请求失败
    */
-  #requestFail(err) {
+  #requestFail(err: any) {
     // 微信小程序，无论接口返回200还是其他，响应无论是否有错误，都会进入 success 回调；只有类似超时这种请求错误才会进入 fail 回调
-    //
+    // 
     /**
      * 阿里系小程序，接口返回非200状态码，会进入 fail 回调, 此时 err 对象结构如下（当错误码为 14 或 19 时，会多返回 status、data、headers。可通过这些字段获取服务端相关错误信息）：
      {
@@ -388,11 +349,7 @@ export class XMLHttpRequest extends Events {
     this.#callReadyStateChange(XMLHttpRequest.DONE)
 
     if (this.#status) {
-      const loadendEvent = createXMLHttpRequestEvent(
-        'loadend',
-        this,
-        this.#header['Content-Length']
-      )
+      const loadendEvent = createXMLHttpRequestEvent('loadend', this, this.#header['Content-Length'])
       this.trigger('loadend', loadendEvent)
       isFunction(this.onloadend) && this.onloadend(loadendEvent)
     }
@@ -406,8 +363,7 @@ export class XMLHttpRequest extends Events {
   }
 
   set timeout(timeout) {
-    if (typeof timeout !== 'number' || !isFinite(timeout) || timeout <= 0)
-      return
+    if (typeof timeout !== 'number' || !isFinite(timeout) || timeout <= 0) return
 
     this.#timeout = timeout
   }
@@ -417,11 +373,7 @@ export class XMLHttpRequest extends Events {
   }
 
   get statusText() {
-    if (
-      this.#readyState === XMLHttpRequest.UNSENT ||
-      this.#readyState === XMLHttpRequest.OPENED
-    )
-      return ''
+    if (this.#readyState === XMLHttpRequest.UNSENT || this.#readyState === XMLHttpRequest.OPENED) return ''
 
     return STATUS_TEXT_MAP[this.#status + ''] || this.#statusText || ''
   }
@@ -470,11 +422,7 @@ export class XMLHttpRequest extends Events {
   }
 
   getAllResponseHeaders() {
-    if (
-      this.#readyState === XMLHttpRequest.UNSENT ||
-      this.#readyState === XMLHttpRequest.OPENED ||
-      !this.#resHeader
-    )
+    if (this.#readyState === XMLHttpRequest.UNSENT || this.#readyState === XMLHttpRequest.OPENED || !this.#resHeader)
       return ''
 
     return Object.keys(this.#resHeader)
@@ -482,24 +430,18 @@ export class XMLHttpRequest extends Events {
       .join('\r\n')
   }
 
-  getResponseHeader(name) {
-    if (
-      this.#readyState === XMLHttpRequest.UNSENT ||
-      this.#readyState === XMLHttpRequest.OPENED ||
-      !this.#resHeader
-    )
+  getResponseHeader(name: any) {
+    if (this.#readyState === XMLHttpRequest.UNSENT || this.#readyState === XMLHttpRequest.OPENED || !this.#resHeader)
       return null
 
     // 处理大小写不敏感
-    const key = Object.keys(this.#resHeader).find(
-      (item) => item.toLowerCase() === name.toLowerCase()
-    )
+    const key = Object.keys(this.#resHeader).find((item) => item.toLowerCase() === name.toLowerCase())
     const value = key ? this.#resHeader[key] : null
 
     return typeof value === 'string' ? value : null
   }
 
-  open(method, url) {
+  open(method: any, url: any) {
     if (typeof method === 'string') method = method.toUpperCase()
 
     if (SUPPORT_METHOD.indexOf(method) < 0) return
@@ -511,13 +453,13 @@ export class XMLHttpRequest extends Events {
     this.#callReadyStateChange(XMLHttpRequest.OPENED)
   }
 
-  setRequestHeader(header, value) {
+  setRequestHeader(header: any, value: any) {
     if (typeof header === 'string' && typeof value === 'string') {
       this.#header[header] = value
     }
   }
 
-  send(data) {
+  send(data: any) {
     if (this.#readyState !== XMLHttpRequest.OPENED) return
 
     this.#data = data

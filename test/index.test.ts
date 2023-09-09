@@ -1,5 +1,7 @@
+import { XMLHttpRequest } from '@/index'
+
 describe('[Default]', () => {
-  test('foo should be bar', () => {
-    expect(true).toBe(true)
+  test('XMLHttpRequest toBeDefined', () => {
+    expect(XMLHttpRequest).toBeDefined()
   })
 })
