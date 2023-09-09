@@ -1,10 +1,17 @@
-import { createEvent, Events, parseUrl, TaroEvent, window } from '@tarojs/runtime'
-import { isFunction, isString } from '@tarojs/shared'
-import { request } from '@tarojs/taro'
+import 'miniprogram-api-typings'
+import { Event, EventTarget } from 'event-target-shim'
+import { isFunction, isString } from './shared'
 
-declare const ENABLE_COOKIE: boolean
-
-const SUPPORT_METHOD = ['OPTIONS', 'GET', 'HEAD', 'POST', 'PUT', 'DELETE', 'TRACE', 'CONNECT']
+const SUPPORT_METHOD = new Set([
+  'OPTIONS',
+  'GET',
+  'HEAD',
+  'POST',
+  'PUT',
+  'DELETE',
+  'TRACE',
+  'CONNECT'
+])
 const STATUS_TEXT_MAP: Record<string, string> = {
   100: 'Continue',
   101: 'Switching protocols',
@@ -49,46 +56,50 @@ const STATUS_TEXT_MAP: Record<string, string> = {
   502: 'Bad Gateway',
   503: 'Service Unavailable',
   504: 'Gateway Timeout',
-  505: 'HTTP Version Not Supported',
+  505: 'HTTP Version Not Supported'
 }
 
-export interface XMLHttpRequestEvent extends TaroEvent {
+export interface XMLHttpRequestEvent extends Event {
   target: XMLHttpRequest
   currentTarget: XMLHttpRequest
   loaded: number
   total: number
 }
 
-function createXMLHttpRequestEvent(event: string, target: XMLHttpRequest, loaded: number): XMLHttpRequestEvent {
-  const e = createEvent(event) as XMLHttpRequestEvent
+function createXMLHttpRequestEvent(
+  event: string,
+  target: XMLHttpRequest,
+  loaded: number
+): XMLHttpRequestEvent {
+  const e = new Event(event) as XMLHttpRequestEvent
   try {
     Object.defineProperties(e, {
-      'currentTarget': {
+      currentTarget: {
         enumerable: true,
         value: target
       },
-      'target': {
+      target: {
         enumerable: true,
         value: target
       },
-      'loaded': {
+      loaded: {
         enumerable: true,
         value: loaded || 0
       },
       // 读 Content-Range 字段，目前来说作用不大,先和 loaded 保持一致
-      'total': {
+      total: {
         enumerable: true,
         value: loaded || 0
       }
     })
-  } catch (err) {
+  } catch {
     // no handler
   }
   return e
 }
 
 // https://developer.mozilla.org/zh-CN/docs/Web/API/XMLHttpRequest
-export class XMLHttpRequest extends Events {
+export class XMLHttpRequest extends EventTarget {
   static readonly UNSENT = 0
   static readonly OPENED = 1
   static readonly HEADERS_RECEIVED = 2
@@ -116,7 +127,7 @@ export class XMLHttpRequest extends Events {
   #response: null
   #timeout: number
   #withCredentials: boolean
-  #requestTask: null | Taro.RequestTask<any>
+  #requestTask: null | any
 
   // 事件正常流转： loadstart => progress（可能多次） => load => loadend
   // error 流转： loadstart => error => loadend
@@ -154,7 +165,7 @@ export class XMLHttpRequest extends Events {
     this.#statusText = ''
     this.#readyState = XMLHttpRequest.UNSENT
     this.#header = {
-      Accept: '*/*',
+      Accept: '*/*'
     }
     this.#responseType = ''
     this.#resHeader = null
@@ -168,12 +179,12 @@ export class XMLHttpRequest extends Events {
 
   addEventListener(event: string, callback: (arg: any) => void) {
     if (!isString(event)) return
-    this.on(event, callback, null)
+    super.addEventListener(event, callback)
   }
 
   removeEventListener(event: string, callback: (arg: any) => void) {
     if (!isString(event)) return
-    this.off(event, callback, null)
+    super.removeEventListener(event, callback)
   }
 
   /**
@@ -184,9 +195,15 @@ export class XMLHttpRequest extends Events {
     this.#readyState = readyState
 
     if (hasChange) {
-      const readystatechangeEvent = createXMLHttpRequestEvent('readystatechange', this, 0)
-      this.trigger('readystatechange', readystatechangeEvent)
-      isFunction(this.onreadystatechange) && this.onreadystatechange(readystatechangeEvent)
+      const readystatechangeEvent = createXMLHttpRequestEvent(
+        'readystatechange',
+        this,
+        0
+      )
+      this.dispatchEvent(readystatechangeEvent)
+
+      isFunction(this.onreadystatechange) &&
+        this.onreadystatechange(readystatechangeEvent)
     }
   }
 
@@ -194,10 +211,12 @@ export class XMLHttpRequest extends Events {
    * 执行请求
    */
   #callRequest() {
-    if (!window || !window.document) {
-      console.warn('this page has been unloaded, so this request will be canceled.')
-      return
-    }
+    // if (!window || !window.document) {
+    //   console.warn(
+    //     'this page has been unloaded, so this request will be canceled.'
+    //   )
+    //   return
+    // }
 
     if (this.#timeout) {
       setTimeout(() => {
@@ -206,7 +225,7 @@ export class XMLHttpRequest extends Events {
           if (this.#requestTask) this.#requestTask.abort()
           this.#callReadyStateChange(XMLHttpRequest.DONE)
           const timeoutEvent = createXMLHttpRequestEvent('timeout', this, 0)
-          this.trigger('timeout', timeoutEvent)
+          this.dispatchEvent(timeoutEvent)
           isFunction(this.ontimeout) && this.ontimeout(timeoutEvent)
         }
       }, this.#timeout)
@@ -220,29 +239,31 @@ export class XMLHttpRequest extends Events {
     this.#response = null
 
     // 补完 url
-    let url = this.#url
-    url = url.indexOf('//') === -1 ? window.location.origin + url : url
+    const url = this.#url
+    // url = url.includes('//') ? url : window.location.origin + url
 
     // 头信息
     const header = Object.assign({}, this.#header)
     // https://developer.mozilla.org/zh-CN/docs/Web/HTTP/Cookies
-    header.cookie = window.document.$$cookie
-    if (!this.withCredentials) {
-      // 不同源，要求 withCredentials 为 true 才携带 cookie
-      const { origin } = parseUrl(url)
-      if (origin !== window.location.origin) delete header.cookie
-    }
-    this.#requestTask = request({
+    // header.cookie = window.document.$$cookie
+    // if (!this.withCredentials) {
+    //   // 不同源，要求 withCredentials 为 true 才携带 cookie
+    //   const { origin } = parseUrl(url)
+    //   if (origin !== window.location.origin) delete header.cookie
+    // }
+    this.#requestTask = wx.request({
       url,
       data: this.#data || {},
       header,
       // @ts-ignore
       method: this.#method,
+      // @ts-ignore
       dataType: this.#responseType === 'json' ? 'json' : 'text',
-      responseType: this.#responseType === 'arraybuffer' ? 'arraybuffer' : 'text',
+      responseType:
+        this.#responseType === 'arraybuffer' ? 'arraybuffer' : 'text',
       success: this.#requestSuccess.bind(this),
       fail: this.#requestFail.bind(this),
-      complete: this.#requestComplete.bind(this),
+      complete: this.#requestComplete.bind(this)
     })
   }
 
@@ -250,60 +271,36 @@ export class XMLHttpRequest extends Events {
    * 请求成功
    */
   #requestSuccess({ data, statusCode, header }: any) {
-    if (!window || !window.document) {
-      console.warn('this page has been unloaded, so this request will be canceled.')
-      return
-    }
+    // if (!window || !window.document) {
+    //   console.warn(
+    //     'this page has been unloaded, so this request will be canceled.'
+    //   )
+    //   return
+    // }
 
     this.#status = statusCode
     this.#resHeader = header
 
     this.#callReadyStateChange(XMLHttpRequest.HEADERS_RECEIVED)
 
-    if (ENABLE_COOKIE) {
-      // 处理 set-cookie
-      const setCookieStr = header['Set-Cookie']
-
-      if (setCookieStr && typeof setCookieStr === 'string') {
-        let start = 0
-        let startSplit = 0
-        let nextSplit = setCookieStr.indexOf(',', startSplit)
-        const cookies: string[] = []
-
-        while (nextSplit >= 0) {
-          const lastSplitStr = setCookieStr.substring(start, nextSplit)
-          const splitStr = setCookieStr.substr(nextSplit)
-
-          // eslint-disable-next-line no-control-regex
-          if (/^,\s*([^,=;\x00-\x1F]+)=([^;\n\r\0\x00-\x1F]*).*/.test(splitStr)) {
-            // 分割成功，则上一片是完整 cookie
-            cookies.push(lastSplitStr)
-            start = nextSplit + 1
-          }
-
-          startSplit = nextSplit + 1
-          nextSplit = setCookieStr.indexOf(',', startSplit)
-        }
-
-        // 塞入最后一片 cookie
-        cookies.push(setCookieStr.substr(start))
-
-        cookies.forEach((cookie) => {
-          window.document.cookie = cookie
-        })
-      }
-    }
-
     // 处理返回数据
     if (data) {
       this.#callReadyStateChange(XMLHttpRequest.LOADING)
-      const loadstartEvent = createXMLHttpRequestEvent('loadstart', this, header['Content-Length'])
-      this.trigger('loadstart', loadstartEvent)
+      const loadstartEvent = createXMLHttpRequestEvent(
+        'loadstart',
+        this,
+        header['Content-Length']
+      )
+      this.dispatchEvent(loadstartEvent)
       isFunction(this.onloadstart) && this.onloadstart(loadstartEvent)
       this.#response = data
 
-      const loadEvent = createXMLHttpRequestEvent('load', this, header['Content-Length'])
-      this.trigger('load', loadEvent)
+      const loadEvent = createXMLHttpRequestEvent(
+        'load',
+        this,
+        header['Content-Length']
+      )
+      this.dispatchEvent(loadEvent)
       isFunction(this.onload) && this.onload(loadEvent)
     }
   }
@@ -312,20 +309,6 @@ export class XMLHttpRequest extends Events {
    * 请求失败
    */
   #requestFail(err: any) {
-    // 微信小程序，无论接口返回200还是其他，响应无论是否有错误，都会进入 success 回调；只有类似超时这种请求错误才会进入 fail 回调
-    // 
-    /**
-     * 阿里系小程序，接口返回非200状态码，会进入 fail 回调, 此时 err 对象结构如下（当错误码为 14 或 19 时，会多返回 status、data、headers。可通过这些字段获取服务端相关错误信息）：
-     {
-       data: "{\"code\": 401,\"msg\":\"登录过期，请重新登录\"}"
-       error: 19
-       errorMessage: "http status error"
-       headers: {date: 'Mon, 14 Aug 2023 08:54:58 GMT', content-type: 'application/json;charset=UTF-8', content-length: '52', connection: 'close', access-control-allow-credentials: 'true', …}
-       originalData: "{\"code\": 401,\"msg\":\"登录过期，请重新登录\"}"
-       status: 401
-     }
-     */
-    // 统一行为，能正常响应的，都算 success.
     if (err.status) {
       this.#requestSuccess({
         data: err,
@@ -337,7 +320,7 @@ export class XMLHttpRequest extends Events {
     this.#status = 0
     this.#statusText = err.errMsg || err.errorMessage
     const errorEvent = createXMLHttpRequestEvent('error', this, 0)
-    this.trigger('error', errorEvent)
+    this.dispatchEvent(errorEvent)
     isFunction(this.onerror) && this.onerror(errorEvent)
   }
 
@@ -349,8 +332,12 @@ export class XMLHttpRequest extends Events {
     this.#callReadyStateChange(XMLHttpRequest.DONE)
 
     if (this.#status) {
-      const loadendEvent = createXMLHttpRequestEvent('loadend', this, this.#header['Content-Length'])
-      this.trigger('loadend', loadendEvent)
+      const loadendEvent = createXMLHttpRequestEvent(
+        'loadend',
+        this,
+        this.#header['Content-Length']
+      )
+      this.dispatchEvent(loadendEvent)
       isFunction(this.onloadend) && this.onloadend(loadendEvent)
     }
   }
@@ -363,7 +350,12 @@ export class XMLHttpRequest extends Events {
   }
 
   set timeout(timeout) {
-    if (typeof timeout !== 'number' || !isFinite(timeout) || timeout <= 0) return
+    if (
+      typeof timeout !== 'number' ||
+      !Number.isFinite(timeout) ||
+      timeout <= 0
+    )
+      return
 
     this.#timeout = timeout
   }
@@ -373,7 +365,11 @@ export class XMLHttpRequest extends Events {
   }
 
   get statusText() {
-    if (this.#readyState === XMLHttpRequest.UNSENT || this.#readyState === XMLHttpRequest.OPENED) return ''
+    if (
+      this.#readyState === XMLHttpRequest.UNSENT ||
+      this.#readyState === XMLHttpRequest.OPENED
+    )
+      return ''
 
     return STATUS_TEXT_MAP[this.#status + ''] || this.#statusText || ''
   }
@@ -416,13 +412,17 @@ export class XMLHttpRequest extends Events {
     if (this.#requestTask) {
       this.#requestTask.abort()
       const abortEvent = createXMLHttpRequestEvent('abort', this, 0)
-      this.trigger('abort', abortEvent)
+      this.dispatchEvent(abortEvent)
       isFunction(this.onabort) && this.onabort(abortEvent)
     }
   }
 
   getAllResponseHeaders() {
-    if (this.#readyState === XMLHttpRequest.UNSENT || this.#readyState === XMLHttpRequest.OPENED || !this.#resHeader)
+    if (
+      this.#readyState === XMLHttpRequest.UNSENT ||
+      this.#readyState === XMLHttpRequest.OPENED ||
+      !this.#resHeader
+    )
       return ''
 
     return Object.keys(this.#resHeader)
@@ -431,11 +431,17 @@ export class XMLHttpRequest extends Events {
   }
 
   getResponseHeader(name: any) {
-    if (this.#readyState === XMLHttpRequest.UNSENT || this.#readyState === XMLHttpRequest.OPENED || !this.#resHeader)
+    if (
+      this.#readyState === XMLHttpRequest.UNSENT ||
+      this.#readyState === XMLHttpRequest.OPENED ||
+      !this.#resHeader
+    )
       return null
 
     // 处理大小写不敏感
-    const key = Object.keys(this.#resHeader).find((item) => item.toLowerCase() === name.toLowerCase())
+    const key = Object.keys(this.#resHeader).find(
+      (item) => item.toLowerCase() === name.toLowerCase()
+    )
     const value = key ? this.#resHeader[key] : null
 
     return typeof value === 'string' ? value : null
@@ -444,7 +450,7 @@ export class XMLHttpRequest extends Events {
   open(method: any, url: any) {
     if (typeof method === 'string') method = method.toUpperCase()
 
-    if (SUPPORT_METHOD.indexOf(method) < 0) return
+    if (!SUPPORT_METHOD.has(method)) return
     if (!url || typeof url !== 'string') return
 
     this.#method = method
